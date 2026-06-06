@@ -30,7 +30,8 @@ export default defineConfig( {
 		rollupOptions: {
 			input: {
 				main: resolve( 'index.html' ),
-				editor: resolve( 'editor.html' )
+				editor: resolve( 'editor.html' ),
+				devEditor: resolve( 'dev-editor.html' )
 			}
 		}
 	},

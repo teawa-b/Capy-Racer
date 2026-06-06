@@ -1,0 +1,1130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+	<title>Dev Map Editor</title>
+	<style>
+		* { box-sizing: border-box; }
+		body {
+			margin: 0;
+			overflow: hidden;
+			background: #171a17;
+			color: #f1f0e8;
+			font-family: "Segoe UI", "Trebuchet MS", sans-serif;
+		}
+		canvas { display: block; touch-action: none; }
+		button, input {
+			font: inherit;
+		}
+		#topbar {
+			position: fixed;
+			top: 0;
+			left: 0;
+			right: 0;
+			height: 58px;
+			display: flex;
+			align-items: center;
+			gap: 8px;
+			padding: 10px 14px;
+			background: rgba(22, 25, 22, 0.92);
+			border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+			z-index: 20;
+		}
+		.brand {
+			min-width: 156px;
+			font-weight: 900;
+			font-size: 15px;
+			text-transform: uppercase;
+			letter-spacing: 0;
+			color: #f8d35d;
+		}
+		.tool-group {
+			display: flex;
+			gap: 6px;
+			align-items: center;
+			padding-right: 8px;
+			margin-right: 4px;
+			border-right: 1px solid rgba(255, 255, 255, 0.13);
+		}
+		button {
+			min-height: 34px;
+			border: 1px solid rgba(255, 255, 255, 0.16);
+			border-radius: 7px;
+			background: rgba(255, 255, 255, 0.08);
+			color: #f1f0e8;
+			padding: 7px 12px;
+			cursor: pointer;
+			font-weight: 700;
+		}
+		button:hover { background: rgba(255, 255, 255, 0.15); }
+		button.active {
+			background: #f8d35d;
+			border-color: #f8d35d;
+			color: #171a17;
+		}
+		button.action {
+			background: rgba(70, 133, 101, 0.45);
+			border-color: rgba(127, 206, 160, 0.42);
+		}
+		button.action:hover { background: rgba(77, 156, 116, 0.62); }
+		button.danger:hover {
+			background: rgba(178, 58, 55, 0.45);
+			border-color: rgba(255, 120, 112, 0.45);
+		}
+		#side {
+			position: fixed;
+			top: 58px;
+			right: 0;
+			bottom: 0;
+			width: 312px;
+			padding: 14px;
+			background: rgba(20, 23, 20, 0.94);
+			border-left: 1px solid rgba(255, 255, 255, 0.14);
+			overflow: auto;
+			z-index: 15;
+		}
+		.panel-title {
+			margin: 0 0 8px;
+			font-size: 12px;
+			font-weight: 900;
+			text-transform: uppercase;
+			color: #9db5a5;
+		}
+		.asset-list, .property-grid {
+			display: grid;
+			gap: 8px;
+			margin-bottom: 18px;
+		}
+		.asset {
+			width: 100%;
+			text-align: left;
+			overflow: hidden;
+			text-overflow: ellipsis;
+			white-space: nowrap;
+		}
+		.asset.selected {
+			background: rgba(248, 211, 93, 0.22);
+			border-color: rgba(248, 211, 93, 0.55);
+		}
+		label {
+			display: grid;
+			gap: 4px;
+			font-size: 12px;
+			font-weight: 800;
+			color: #aeb9b0;
+		}
+		input {
+			width: 100%;
+			border: 1px solid rgba(255, 255, 255, 0.14);
+			border-radius: 7px;
+			background: rgba(255, 255, 255, 0.08);
+			color: #fff;
+			padding: 7px 8px;
+		}
+		#status {
+			position: fixed;
+			left: 14px;
+			bottom: 14px;
+			max-width: calc(100vw - 360px);
+			padding: 9px 12px;
+			border-radius: 7px;
+			background: rgba(20, 23, 20, 0.9);
+			border: 1px solid rgba(255, 255, 255, 0.13);
+			color: #dfe8df;
+			font-size: 13px;
+			z-index: 18;
+		}
+		#toast {
+			position: fixed;
+			left: 50%;
+			bottom: 18px;
+			transform: translateX(-50%);
+			padding: 10px 16px;
+			border-radius: 7px;
+			background: rgba(248, 211, 93, 0.96);
+			color: #171a17;
+			font-weight: 900;
+			opacity: 0;
+			pointer-events: none;
+			transition: opacity 0.18s;
+			z-index: 40;
+		}
+		#toast.show { opacity: 1; }
+		@media (max-width: 860px) {
+			#topbar {
+				height: auto;
+				flex-wrap: wrap;
+				padding-right: 318px;
+			}
+			.brand { min-width: 100%; }
+		}
+	</style>
+	<script type="importmap">
+	{
+		"imports": {
+			"three": "https://cdn.jsdelivr.net/npm/three@0.183.2/build/three.module.js",
+			"three/addons/": "https://cdn.jsdelivr.net/npm/three@0.183.2/examples/jsm/",
+			"crashcat": "https://esm.sh/crashcat@0.0.2"
+		}
+	}
+	</script>
+</head>
+<body>
+	<div id="topbar">
+		<div class="brand">Dev Map Editor</div>
+		<div class="tool-group">
+			<button data-tool="select" class="active">Select</button>
+			<button data-tool="place">Place</button>
+			<button data-tool="drive">Drive Area</button>
+			<button data-tool="hitbox">Hitbox</button>
+			<button data-tool="waypoint">Waypoint</button>
+			<button data-tool="start">Start</button>
+			<button data-tool="finish">Finish</button>
+		</div>
+		<div class="tool-group">
+			<button id="import-model" class="action">Import Model</button>
+			<button id="load-map">Load Map</button>
+			<button id="save-map" class="action">Save Map</button>
+			<button id="play-map" class="action">Play</button>
+		</div>
+		<button id="clear-map" class="danger">Clear</button>
+	</div>
+
+	<aside id="side">
+		<h2 class="panel-title">Models</h2>
+		<div id="asset-list" class="asset-list"></div>
+		<h2 class="panel-title">Selection</h2>
+		<div id="properties" class="property-grid"></div>
+	</aside>
+
+	<div id="status">Select a tool. Middle mouse, Space-drag, or wheel to navigate.</div>
+	<div id="toast"></div>
+	<input id="model-file" type="file" accept=".glb,.gltf,model/gltf-binary,model/gltf+json" hidden>
+	<input id="map-file" type="file" accept=".capytrack,.json,application/json" hidden>
+
+	<script type="module">
+	import * as THREE from 'three';
+	import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+	import {
+		createEmptyDevMap,
+		createDevMapFile,
+		makeDevMapFileName,
+		parseDevMapText,
+		loadDevMapAssets,
+		DEV_MAP_STORAGE_KEY,
+	} from './js/DevMap.js';
+
+	const loader = new GLTFLoader();
+	const map = createEmptyDevMap( 'Capy Dev Map' );
+	const assetScenes = new Map();
+	const visualById = new Map();
+	const rayObjects = [];
+
+	let tool = 'select';
+	let selectedAssetId = null;
+	let selected = null;
+	let drag = null;
+	let spaceDown = false;
+	let toastTimer = 0;
+
+	const renderer = new THREE.WebGLRenderer( { antialias: true, powerPreference: 'high-performance' } );
+	renderer.setSize( window.innerWidth, window.innerHeight );
+	renderer.setPixelRatio( Math.min( window.devicePixelRatio, 2 ) );
+	renderer.shadowMap.enabled = true;
+	renderer.toneMapping = THREE.ACESFilmicToneMapping;
+	renderer.toneMappingExposure = 1.0;
+	document.body.appendChild( renderer.domElement );
+
+	const scene = new THREE.Scene();
+	scene.background = new THREE.Color( 0x2b332d );
+	scene.fog = new THREE.Fog( 0x2b332d, 120, 220 );
+
+	const camera = new THREE.OrthographicCamera( - 42, 42, 42, - 42, 0.1, 300 );
+	camera.position.set( 0, 90, 0 );
+	camera.lookAt( 0, 0, 0 );
+	camera.zoom = 1;
+	camera.updateProjectionMatrix();
+
+	const dirLight = new THREE.DirectionalLight( 0xffffff, 4 );
+	dirLight.position.set( 28, 50, 18 );
+	dirLight.castShadow = true;
+	dirLight.shadow.mapSize.setScalar( 2048 );
+	scene.add( dirLight );
+	scene.add( new THREE.HemisphereLight( 0xcbd8cf, 0x52664d, 1.8 ) );
+
+	const ground = new THREE.Mesh(
+		new THREE.PlaneGeometry( 240, 240 ),
+		new THREE.MeshStandardMaterial( { color: 0x27362a, roughness: 1 } )
+	);
+	ground.rotation.x = - Math.PI / 2;
+	ground.position.y = - 0.16;
+	ground.receiveShadow = true;
+	scene.add( ground );
+
+	const grid = new THREE.GridHelper( 240, 48, 0x63755f, 0x415044 );
+	grid.position.y = - 0.13;
+	grid.material.opacity = 0.42;
+	grid.material.transparent = true;
+	scene.add( grid );
+
+	const content = new THREE.Group();
+	scene.add( content );
+
+	const raycaster = new THREE.Raycaster();
+	const pointer = new THREE.Vector2();
+	const worldPlane = new THREE.Plane( new THREE.Vector3( 0, 1, 0 ), 0 );
+	const hitPoint = new THREE.Vector3();
+	const camTarget = new THREE.Vector3();
+
+	const mats = {
+		drive: new THREE.MeshStandardMaterial( { color: 0x4c755d, transparent: true, opacity: 0.62, roughness: 0.8 } ),
+		hitbox: new THREE.MeshBasicMaterial( { color: 0xff5d4d, wireframe: true } ),
+		waypoint: new THREE.MeshBasicMaterial( { color: 0xf8d35d } ),
+		start: new THREE.MeshBasicMaterial( { color: 0x59d887 } ),
+		finish: new THREE.MeshBasicMaterial( { color: 0xf2f0dc } ),
+		previewDrive: new THREE.MeshBasicMaterial( { color: 0x83d69e, transparent: true, opacity: 0.35 } ),
+		previewHitbox: new THREE.MeshBasicMaterial( { color: 0xff6c57, wireframe: true, transparent: true, opacity: 0.8 } ),
+	};
+
+	window.addEventListener( 'resize', resize );
+	resize();
+
+	function resize() {
+
+		const sideWidth = window.innerWidth > 720 ? 312 : 0;
+		const w = Math.max( 1, window.innerWidth - sideWidth );
+		const h = window.innerHeight;
+		const aspect = w / h;
+		const size = 42;
+		camera.left = - size * aspect;
+		camera.right = size * aspect;
+		camera.top = size;
+		camera.bottom = - size;
+		camera.updateProjectionMatrix();
+		renderer.setSize( window.innerWidth, window.innerHeight );
+
+	}
+
+	function uid( prefix ) {
+
+		return `${ prefix }-${ crypto.randomUUID ? crypto.randomUUID() : Date.now().toString( 36 ) + Math.random().toString( 36 ).slice( 2 ) }`;
+
+	}
+
+	function setTool( next ) {
+
+		tool = next;
+		document.querySelectorAll( '[data-tool]' ).forEach( btn => btn.classList.toggle( 'active', btn.dataset.tool === tool ) );
+		setStatus();
+
+	}
+
+	function setStatus() {
+
+		const labels = {
+			select: 'Select and drag existing models, boxes, waypoints, start, or finish.',
+			place: 'Click the map to place the selected imported model.',
+			drive: 'Drag a rectangle to mark a drivable surface.',
+			hitbox: 'Drag a rectangle to add a collision hitbox.',
+			waypoint: 'Click to drop race path nodes in order.',
+			start: 'Click to place the start marker. Use the rotation field for heading.',
+			finish: 'Click to place the finish marker.',
+		};
+		document.getElementById( 'status' ).textContent = labels[ tool ];
+
+	}
+
+	document.querySelectorAll( '[data-tool]' ).forEach( btn => {
+
+		btn.addEventListener( 'click', () => setTool( btn.dataset.tool ) );
+
+	} );
+
+	document.getElementById( 'import-model' ).addEventListener( 'click', () => {
+
+		document.getElementById( 'model-file' ).value = '';
+		document.getElementById( 'model-file' ).click();
+
+	} );
+
+	document.getElementById( 'model-file' ).addEventListener( 'change', async ( e ) => {
+
+		const file = e.target.files[ 0 ];
+		if ( ! file ) return;
+
+		try {
+
+			const dataUrl = await fileToDataUrl( file );
+			const asset = { id: uid( 'asset' ), name: file.name, type: file.type || 'model/gltf-binary', dataUrl };
+			const gltf = await loader.loadAsync( dataUrl );
+			prepareModel( gltf.scene );
+			map.assets.push( asset );
+			assetScenes.set( asset.id, gltf.scene );
+			selectedAssetId = asset.id;
+			renderAssets();
+			setTool( 'place' );
+			saveLocal();
+			showToast( 'Model imported' );
+
+		} catch ( err ) {
+
+			console.error( err );
+			showToast( 'Could not import model' );
+
+		}
+
+	} );
+
+	document.getElementById( 'load-map' ).addEventListener( 'click', () => {
+
+		document.getElementById( 'map-file' ).value = '';
+		document.getElementById( 'map-file' ).click();
+
+	} );
+
+	document.getElementById( 'map-file' ).addEventListener( 'change', async ( e ) => {
+
+		const file = e.target.files[ 0 ];
+		if ( ! file ) return;
+
+		try {
+
+			const nextMap = parseDevMapText( await file.text() );
+			Object.assign( map, nextMap );
+			assetScenes.clear();
+			const loadedAssets = await loadDevMapAssets( loader, map );
+			for ( const [ id, scene ] of loadedAssets ) {
+
+				prepareModel( scene );
+				assetScenes.set( id, scene );
+
+			}
+			selectedAssetId = map.assets[ 0 ]?.id || null;
+			selected = null;
+			rebuild();
+			renderAssets();
+			renderProperties();
+			saveLocal();
+			showToast( 'Map loaded' );
+
+		} catch ( err ) {
+
+			console.error( err );
+			showToast( 'Could not load map' );
+
+		}
+
+	} );
+
+	document.getElementById( 'save-map' ).addEventListener( 'click', () => {
+
+		const data = createDevMapFile( map );
+		const blob = new Blob( [ JSON.stringify( data, null, '\t' ) ], { type: 'application/json' } );
+		const url = URL.createObjectURL( blob );
+		const link = document.createElement( 'a' );
+		link.href = url;
+		link.download = makeDevMapFileName( map.name );
+		document.body.appendChild( link );
+		link.click();
+		link.remove();
+		URL.revokeObjectURL( url );
+		saveLocal();
+		showToast( 'Map saved' );
+
+	} );
+
+	document.getElementById( 'play-map' ).addEventListener( 'click', () => {
+
+		if ( saveLocal() ) {
+
+			window.open( 'index.html?devMap=local&play=1', '_blank' );
+
+		}
+
+	} );
+
+	document.getElementById( 'clear-map' ).addEventListener( 'click', () => {
+
+		const fresh = createEmptyDevMap( map.name );
+		Object.assign( map, fresh );
+		assetScenes.clear();
+		selectedAssetId = null;
+		selected = null;
+		rebuild();
+		renderAssets();
+		renderProperties();
+		saveLocal();
+		showToast( 'Map cleared' );
+
+	} );
+
+	function renderAssets() {
+
+		const list = document.getElementById( 'asset-list' );
+		list.innerHTML = '';
+
+		if ( map.assets.length === 0 ) {
+
+			const empty = document.createElement( 'div' );
+			empty.textContent = 'No models imported yet.';
+			empty.style.color = '#9db5a5';
+			list.appendChild( empty );
+			return;
+
+		}
+
+		for ( const asset of map.assets ) {
+
+			const btn = document.createElement( 'button' );
+			btn.className = 'asset';
+			btn.classList.toggle( 'selected', selectedAssetId === asset.id );
+			btn.textContent = asset.name;
+			btn.addEventListener( 'click', () => {
+
+				selectedAssetId = asset.id;
+				renderAssets();
+				setTool( 'place' );
+
+			} );
+			list.appendChild( btn );
+
+		}
+
+	}
+
+	function renderProperties() {
+
+		const props = document.getElementById( 'properties' );
+		props.innerHTML = '';
+
+		if ( ! selected ) {
+
+			props.textContent = 'Nothing selected.';
+			props.style.color = '#9db5a5';
+			return;
+
+		}
+
+		props.style.color = '';
+		const target = getSelectedTarget();
+		if ( ! target ) return;
+
+		addReadonly( props, 'Type', selected.type );
+
+		if ( selected.type === 'object' ) {
+
+			addNumber( props, 'X', target.position[ 0 ], v => target.position[ 0 ] = v );
+			addNumber( props, 'Y', target.position[ 1 ], v => target.position[ 1 ] = v );
+			addNumber( props, 'Z', target.position[ 2 ], v => target.position[ 2 ] = v );
+			addNumber( props, 'Scale', target.scale, v => target.scale = Math.max( 0.01, v ), 0.1 );
+			addDegrees( props, 'Rotation', target.rotationY, v => target.rotationY = v );
+
+		} else if ( selected.type === 'drive' ) {
+
+			addNumber( props, 'X', target.x, v => target.x = v );
+			addNumber( props, 'Z', target.z, v => target.z = v );
+			addNumber( props, 'Width', target.width, v => target.width = Math.max( 0.5, v ) );
+			addNumber( props, 'Depth', target.depth, v => target.depth = Math.max( 0.5, v ) );
+			addDegrees( props, 'Rotation', target.rotationY, v => target.rotationY = v );
+
+		} else if ( selected.type === 'hitbox' ) {
+
+			addNumber( props, 'X', target.x, v => target.x = v );
+			addNumber( props, 'Y', target.y, v => target.y = v );
+			addNumber( props, 'Z', target.z, v => target.z = v );
+			addNumber( props, 'Width', target.width, v => target.width = Math.max( 0.2, v ) );
+			addNumber( props, 'Height', target.height, v => target.height = Math.max( 0.2, v ) );
+			addNumber( props, 'Depth', target.depth, v => target.depth = Math.max( 0.2, v ) );
+			addDegrees( props, 'Rotation', target.rotationY, v => target.rotationY = v );
+
+		} else if ( selected.type === 'waypoint' ) {
+
+			addNumber( props, 'X', target.x, v => target.x = v );
+			addNumber( props, 'Z', target.z, v => target.z = v );
+
+		} else {
+
+			addNumber( props, 'X', target.x, v => target.x = v );
+			addNumber( props, 'Z', target.z, v => target.z = v );
+			addDegrees( props, 'Rotation', target.rotationY, v => target.rotationY = v );
+			if ( selected.type === 'finish' ) addNumber( props, 'Width', target.width, v => target.width = Math.max( 1, v ) );
+
+		}
+
+		const del = document.createElement( 'button' );
+		del.className = 'danger';
+		del.textContent = 'Delete Selection';
+		del.addEventListener( 'click', deleteSelected );
+		props.appendChild( del );
+
+	}
+
+	function addReadonly( parent, name, value ) {
+
+		const label = document.createElement( 'label' );
+		label.textContent = name;
+		const input = document.createElement( 'input' );
+		input.value = value;
+		input.disabled = true;
+		label.appendChild( input );
+		parent.appendChild( label );
+
+	}
+
+	function addNumber( parent, name, value, onChange, step = 1 ) {
+
+		const label = document.createElement( 'label' );
+		label.textContent = name;
+		const input = document.createElement( 'input' );
+		input.type = 'number';
+		input.step = String( step );
+		input.value = Number( value ).toFixed( step < 1 ? 2 : 1 );
+		input.addEventListener( 'change', () => {
+
+			const value = Number( input.value );
+			if ( Number.isFinite( value ) ) {
+
+				onChange( value );
+				rebuild();
+				saveLocal();
+
+			}
+
+		} );
+		label.appendChild( input );
+		parent.appendChild( label );
+
+	}
+
+	function addDegrees( parent, name, radians, onChange ) {
+
+		addNumber( parent, name, THREE.MathUtils.radToDeg( radians ), value => onChange( THREE.MathUtils.degToRad( value ) ), 5 );
+
+	}
+
+	function getSelectedTarget() {
+
+		if ( ! selected ) return null;
+		if ( selected.type === 'object' ) return map.objects.find( item => item.id === selected.id );
+		if ( selected.type === 'drive' ) return map.driveAreas.find( item => item.id === selected.id );
+		if ( selected.type === 'hitbox' ) return map.hitboxes.find( item => item.id === selected.id );
+		if ( selected.type === 'waypoint' ) return map.waypoints.find( item => item.id === selected.id );
+		if ( selected.type === 'start' ) return map.start;
+		if ( selected.type === 'finish' ) return map.finish;
+		return null;
+
+	}
+
+	function deleteSelected() {
+
+		if ( ! selected ) return;
+		if ( selected.type === 'object' ) removeById( map.objects, selected.id );
+		if ( selected.type === 'drive' ) removeById( map.driveAreas, selected.id );
+		if ( selected.type === 'hitbox' ) removeById( map.hitboxes, selected.id );
+		if ( selected.type === 'waypoint' ) removeById( map.waypoints, selected.id );
+		selected = null;
+		rebuild();
+		renderProperties();
+		saveLocal();
+
+	}
+
+	function removeById( list, id ) {
+
+		const index = list.findIndex( item => item.id === id );
+		if ( index !== - 1 ) list.splice( index, 1 );
+
+	}
+
+	function prepareModel( object ) {
+
+		object.traverse( child => {
+
+			if ( child.isMesh ) {
+
+				child.castShadow = true;
+				child.receiveShadow = true;
+				child.material.side = THREE.FrontSide;
+
+			}
+
+		} );
+
+	}
+
+	function rebuild() {
+
+		while ( content.children.length > 0 ) content.remove( content.children[ 0 ] );
+		visualById.clear();
+		rayObjects.length = 0;
+
+		for ( const area of map.driveAreas ) addDriveVisual( area );
+		for ( const hitbox of map.hitboxes ) addHitboxVisual( hitbox );
+		for ( const object of map.objects ) addObjectVisual( object );
+		addPathVisuals();
+		addMarkerVisual( 'start', map.start );
+		addMarkerVisual( 'finish', map.finish );
+
+		renderProperties();
+
+	}
+
+	function addObjectVisual( object ) {
+
+		const src = assetScenes.get( object.assetId );
+		if ( ! src ) return;
+		const mesh = src.clone();
+		mesh.position.fromArray( object.position );
+		mesh.rotation.y = object.rotationY;
+		mesh.scale.setScalar( object.scale );
+		mesh.userData.editor = { type: 'object', id: object.id };
+		mesh.traverse( child => {
+
+			if ( child.isMesh ) {
+
+				child.userData.editor = { type: 'object', id: object.id };
+				rayObjects.push( child );
+
+			}
+
+		} );
+		content.add( mesh );
+		visualById.set( object.id, mesh );
+
+	}
+
+	function addDriveVisual( area ) {
+
+		const mesh = new THREE.Mesh( new THREE.BoxGeometry( area.width, 0.08, area.depth ), mats.drive );
+		mesh.position.set( area.x, - 0.04, area.z );
+		mesh.rotation.y = area.rotationY;
+		mesh.userData.editor = { type: 'drive', id: area.id };
+		content.add( mesh );
+		rayObjects.push( mesh );
+		visualById.set( area.id, mesh );
+
+	}
+
+	function addHitboxVisual( hitbox ) {
+
+		const mesh = new THREE.Mesh( new THREE.BoxGeometry( hitbox.width, hitbox.height, hitbox.depth ), mats.hitbox );
+		mesh.position.set( hitbox.x, hitbox.y, hitbox.z );
+		mesh.rotation.y = hitbox.rotationY;
+		mesh.userData.editor = { type: 'hitbox', id: hitbox.id };
+		content.add( mesh );
+		rayObjects.push( mesh );
+		visualById.set( hitbox.id, mesh );
+
+	}
+
+	function addPathVisuals() {
+
+		const points = [];
+		for ( const point of map.waypoints ) {
+
+			const sphere = new THREE.Mesh( new THREE.SphereGeometry( 0.65, 18, 10 ), mats.waypoint );
+			sphere.position.set( point.x, 0.35, point.z );
+			sphere.userData.editor = { type: 'waypoint', id: point.id };
+			content.add( sphere );
+			rayObjects.push( sphere );
+			visualById.set( point.id, sphere );
+			points.push( new THREE.Vector3( point.x, 0.42, point.z ) );
+
+		}
+
+		if ( points.length > 1 ) {
+
+			const line = new THREE.Line(
+				new THREE.BufferGeometry().setFromPoints( [ ...points, points[ 0 ] ] ),
+				new THREE.LineBasicMaterial( { color: 0xf8d35d } )
+			);
+			content.add( line );
+
+		}
+
+	}
+
+	function addMarkerVisual( type, marker ) {
+
+		const group = new THREE.Group();
+		group.position.set( marker.x, 0.25, marker.z );
+		group.rotation.y = marker.rotationY;
+		group.userData.editor = { type, id: type };
+
+		if ( type === 'start' ) {
+
+			const cone = new THREE.Mesh( new THREE.ConeGeometry( 1.1, 2.4, 3 ), mats.start );
+			cone.rotation.x = Math.PI / 2;
+			cone.position.z = 0.9;
+			group.add( cone );
+
+		} else {
+
+			const width = marker.width || 8;
+			const bar = new THREE.Mesh( new THREE.BoxGeometry( width, 0.12, 0.5 ), mats.finish );
+			bar.position.y = 0.1;
+			group.add( bar );
+
+		}
+
+		group.traverse( child => {
+
+			if ( child.isMesh ) {
+
+				child.userData.editor = { type, id: type };
+				rayObjects.push( child );
+
+			}
+
+		} );
+		content.add( group );
+		visualById.set( type, group );
+
+	}
+
+	function screenToWorld( event ) {
+
+		pointer.x = ( event.clientX / window.innerWidth ) * 2 - 1;
+		pointer.y = - ( event.clientY / window.innerHeight ) * 2 + 1;
+		raycaster.setFromCamera( pointer, camera );
+		return raycaster.ray.intersectPlane( worldPlane, hitPoint ) ? hitPoint.clone() : null;
+
+	}
+
+	function pick( event ) {
+
+		pointer.x = ( event.clientX / window.innerWidth ) * 2 - 1;
+		pointer.y = - ( event.clientY / window.innerHeight ) * 2 + 1;
+		raycaster.setFromCamera( pointer, camera );
+		const hit = raycaster.intersectObjects( rayObjects, true )[ 0 ];
+		return hit?.object?.userData?.editor || null;
+
+	}
+
+	const el = renderer.domElement;
+	el.addEventListener( 'contextmenu', e => e.preventDefault() );
+
+	el.addEventListener( 'pointerdown', ( e ) => {
+
+		el.setPointerCapture( e.pointerId );
+		const world = screenToWorld( e );
+		if ( ! world ) return;
+
+		if ( e.button === 1 || spaceDown || e.ctrlKey || e.metaKey ) {
+
+			drag = { type: 'pan', sx: e.clientX, sy: e.clientY, cx: camTarget.x, cz: camTarget.z };
+			el.style.cursor = 'grabbing';
+			return;
+
+		}
+
+		if ( tool === 'select' ) {
+
+			const picked = pick( e );
+			selected = picked;
+			renderProperties();
+
+			if ( picked ) {
+
+				const target = getSelectedTarget();
+				drag = { type: 'move', start: world, target, original: JSON.parse( JSON.stringify( target ) ) };
+
+			}
+			return;
+
+		}
+
+		if ( tool === 'place' ) {
+
+			if ( ! selectedAssetId ) {
+
+				showToast( 'Import or select a model first' );
+				return;
+
+			}
+
+			const asset = map.assets.find( item => item.id === selectedAssetId );
+			const object = {
+				id: uid( 'object' ),
+				assetId: selectedAssetId,
+				name: asset?.name || 'Model',
+				position: [ world.x, 0, world.z ],
+				rotationY: 0,
+				scale: 1,
+			};
+			map.objects.push( object );
+			selected = { type: 'object', id: object.id };
+			rebuild();
+			saveLocal();
+			return;
+
+		}
+
+		if ( tool === 'drive' || tool === 'hitbox' ) {
+
+			drag = { type: 'box-create', tool, start: world, preview: null };
+			return;
+
+		}
+
+		if ( tool === 'waypoint' ) {
+
+			const point = { id: uid( 'waypoint' ), x: world.x, z: world.z };
+			map.waypoints.push( point );
+			selected = { type: 'waypoint', id: point.id };
+			rebuild();
+			saveLocal();
+			return;
+
+		}
+
+		if ( tool === 'start' || tool === 'finish' ) {
+
+			map[ tool ].x = world.x;
+			map[ tool ].z = world.z;
+			selected = { type: tool, id: tool };
+			rebuild();
+			saveLocal();
+
+		}
+
+	} );
+
+	el.addEventListener( 'pointermove', ( e ) => {
+
+		if ( ! drag ) return;
+
+		if ( drag.type === 'pan' ) {
+
+			const scale = ( camera.top - camera.bottom ) / window.innerHeight / camera.zoom;
+			camTarget.x = drag.cx - ( e.clientX - drag.sx ) * scale;
+			camTarget.z = drag.cz - ( e.clientY - drag.sy ) * scale;
+			camera.position.x = camTarget.x;
+			camera.position.z = camTarget.z;
+			camera.lookAt( camTarget.x, 0, camTarget.z );
+			return;
+
+		}
+
+		const world = screenToWorld( e );
+		if ( ! world ) return;
+
+		if ( drag.type === 'move' ) {
+
+			const dx = world.x - drag.start.x;
+			const dz = world.z - drag.start.z;
+			const t = drag.target;
+			if ( ! t ) return;
+
+			if ( selected.type === 'object' ) {
+
+				t.position[ 0 ] = drag.original.position[ 0 ] + dx;
+				t.position[ 2 ] = drag.original.position[ 2 ] + dz;
+
+			} else {
+
+				t.x = drag.original.x + dx;
+				t.z = drag.original.z + dz;
+
+			}
+
+			rebuild();
+			return;
+
+		}
+
+		if ( drag.type === 'box-create' ) {
+
+			updateBoxPreview( drag, world );
+
+		}
+
+	} );
+
+	window.addEventListener( 'pointerup', ( e ) => {
+
+		if ( drag?.type === 'box-create' ) {
+
+			const world = screenToWorld( e );
+			if ( world ) finishBoxCreate( drag, world );
+
+		}
+
+		if ( drag?.type === 'move' ) saveLocal();
+
+		if ( drag?.preview ) content.remove( drag.preview );
+		drag = null;
+		el.style.cursor = spaceDown ? 'grab' : '';
+
+	} );
+
+	el.addEventListener( 'wheel', ( e ) => {
+
+		e.preventDefault();
+		if ( e.ctrlKey ) {
+
+			camera.zoom *= e.deltaY > 0 ? 0.92 : 1.08;
+			camera.zoom = THREE.MathUtils.clamp( camera.zoom, 0.25, 8 );
+			camera.updateProjectionMatrix();
+
+		} else {
+
+			const scale = ( camera.top - camera.bottom ) / window.innerHeight / camera.zoom;
+			camTarget.x += e.deltaX * scale;
+			camTarget.z += e.deltaY * scale;
+			camera.position.x = camTarget.x;
+			camera.position.z = camTarget.z;
+			camera.lookAt( camTarget.x, 0, camTarget.z );
+
+		}
+
+	}, { passive: false } );
+
+	window.addEventListener( 'keydown', e => {
+
+		if ( e.key === ' ' ) {
+
+			spaceDown = true;
+			el.style.cursor = 'grab';
+			e.preventDefault();
+
+		}
+		if ( e.key === 'Delete' || e.key === 'Backspace' ) deleteSelected();
+
+	} );
+
+	window.addEventListener( 'keyup', e => {
+
+		if ( e.key === ' ' ) {
+
+			spaceDown = false;
+			if ( ! drag ) el.style.cursor = '';
+
+		}
+
+	} );
+
+	function updateBoxPreview( state, world ) {
+
+		if ( state.preview ) content.remove( state.preview );
+		const w = Math.max( 0.2, Math.abs( world.x - state.start.x ) );
+		const d = Math.max( 0.2, Math.abs( world.z - state.start.z ) );
+		const material = state.tool === 'drive' ? mats.previewDrive : mats.previewHitbox;
+		const h = state.tool === 'drive' ? 0.08 : 1.5;
+		const mesh = new THREE.Mesh( new THREE.BoxGeometry( w, h, d ), material );
+		mesh.position.set( ( world.x + state.start.x ) / 2, state.tool === 'drive' ? - 0.02 : h / 2, ( world.z + state.start.z ) / 2 );
+		state.preview = mesh;
+		content.add( mesh );
+
+	}
+
+	function finishBoxCreate( state, world ) {
+
+		const width = Math.abs( world.x - state.start.x );
+		const depth = Math.abs( world.z - state.start.z );
+		if ( width < 0.5 || depth < 0.5 ) return;
+
+		const item = {
+			id: uid( state.tool ),
+			x: ( world.x + state.start.x ) / 2,
+			z: ( world.z + state.start.z ) / 2,
+			width,
+			depth,
+			rotationY: 0,
+		};
+
+		if ( state.tool === 'drive' ) {
+
+			map.driveAreas.push( item );
+			selected = { type: 'drive', id: item.id };
+
+		} else {
+
+			map.hitboxes.push( { ...item, y: 0.75, height: 1.5 } );
+			selected = { type: 'hitbox', id: item.id };
+
+		}
+
+		rebuild();
+		saveLocal();
+
+	}
+
+	function saveLocal() {
+
+		try {
+
+			localStorage.setItem( DEV_MAP_STORAGE_KEY, JSON.stringify( createDevMapFile( map ) ) );
+			return true;
+
+		} catch ( err ) {
+
+			console.warn( 'Dev map could not be stored locally', err );
+			showToast( 'Map is too large for browser storage' );
+			return false;
+
+		}
+
+	}
+
+	function fileToDataUrl( file ) {
+
+		return new Promise( ( resolve, reject ) => {
+
+			const reader = new FileReader();
+			reader.onload = () => resolve( reader.result );
+			reader.onerror = () => reject( reader.error );
+			reader.readAsDataURL( file );
+
+		} );
+
+	}
+
+	function showToast( message ) {
+
+		const el = document.getElementById( 'toast' );
+		el.textContent = message;
+		el.classList.add( 'show' );
+		clearTimeout( toastTimer );
+		toastTimer = setTimeout( () => el.classList.remove( 'show' ), 1800 );
+
+	}
+
+	function animate() {
+
+		requestAnimationFrame( animate );
+		renderer.render( scene, camera );
+
+	}
+
+	try {
+
+		const stored = localStorage.getItem( DEV_MAP_STORAGE_KEY );
+		if ( stored ) {
+
+			Object.assign( map, parseDevMapText( stored ) );
+			const loadedAssets = await loadDevMapAssets( loader, map );
+			for ( const [ id, scene ] of loadedAssets ) {
+
+				prepareModel( scene );
+				assetScenes.set( id, scene );
+
+			}
+			selectedAssetId = map.assets[ 0 ]?.id || null;
+
+		}
+
+	} catch ( err ) {
+
+		console.warn( 'Stored dev map could not be restored', err );
+
+	}
+
+	renderAssets();
+	rebuild();
+	setStatus();
+	animate();
+	</script>
+</body>
+</html>

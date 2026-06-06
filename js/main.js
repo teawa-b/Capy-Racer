@@ -7,6 +7,15 @@ import { AIVehicle } from './AIVehicle.js';
 import { Camera } from './Camera.js';
 import { Controls } from './Controls.js';
 import { buildTrack, decodeCells, computeSpawnPosition, computeTrackBounds, TRACK_CELLS } from './Track.js';
+import {
+	loadStoredDevMap,
+	loadDevMapAssets,
+	buildDevMapScene,
+	createDevMapRaceLine,
+	computeDevMapBounds,
+	computeDevMapSpawn,
+	buildDevMapColliders,
+} from './DevMap.js';
 import { generateRaceLine } from './RaceLine.js';
 import { RaceManager, RaceState } from './RaceManager.js';
 import { RaceHUD } from './RaceHUD.js';
@@ -182,10 +191,19 @@ export async function init() {
 	await loadModels();
 
 	const mapParam = new URLSearchParams( window.location.search ).get( 'map' );
+	const devMapParam = new URLSearchParams( window.location.search ).get( 'devMap' );
 	let customCells = null;
+	let devMap = null;
 	let spawn = null;
 
-	if ( mapParam ) {
+	if ( devMapParam === 'local' ) {
+
+		devMap = loadStoredDevMap();
+		if ( ! devMap ) console.warn( 'No stored dev map found, using default track' );
+
+	}
+
+	if ( ! devMap && mapParam ) {
 
 		try {
 
@@ -201,7 +219,7 @@ export async function init() {
 	}
 
 	// Compute track bounds and size physics/shadows to fit
-	const bounds = computeTrackBounds( customCells );
+	const bounds = devMap ? computeDevMapBounds( devMap ) : computeTrackBounds( customCells );
 	const hw = bounds.halfWidth;
 	const hd = bounds.halfDepth;
 	const groundSize = Math.max( hw, hd ) * 2 + 20;
@@ -224,27 +242,41 @@ export async function init() {
 	scene.add( dirLight );
 	scene.add( hemiLight );
 
-	const decoGroup = buildTrack( gameContainer, models, customCells, { shadows: quality.shadows } );
+	let decoGroup;
+
+	if ( devMap ) {
+
+		const devMapAssets = await loadDevMapAssets( loader, devMap );
+		decoGroup = buildDevMapScene( gameContainer, devMapAssets, devMap, { shadows: quality.shadows } );
+
+	} else {
+
+		decoGroup = buildTrack( gameContainer, models, customCells, { shadows: quality.shadows } );
+
+	}
 
 	// ─── Race System ───────────────────────────────────────────
 	const cells = customCells || TRACK_CELLS;
-	const raceLine = generateRaceLine( cells );
+	const raceLine = devMap ? createDevMapRaceLine( devMap ) : generateRaceLine( cells );
 	const raceManager = new RaceManager( raceLine, 3 );
 
 	// Compute start grid: 2×2 stagger on the finish line piece
-	function computeStartGrid( rl, numCars = 4 ) {
+	function computeStartGrid( rl, numCars = 4, startMarker = null ) {
 
-		if ( rl.length < 3 ) return null;
+		if ( rl.length < 2 && ! startMarker ) return null;
 
-		const c0 = rl[ 0 ], c1 = rl[ 1 ];
+		const c0 = startMarker ? { worldX: startMarker.x, worldZ: startMarker.z } : rl[ 0 ];
+		const c1 = startMarker
+			? { worldX: startMarker.x + Math.sin( startMarker.rotationY ), worldZ: startMarker.z + Math.cos( startMarker.rotationY ) }
+			: rl[ 1 ];
 		const dx = c1.worldX - c0.worldX, dz = c1.worldZ - c0.worldZ;
-		const mag = Math.sqrt( dx * dx + dz * dz );
+		const mag = Math.max( 0.0001, Math.sqrt( dx * dx + dz * dz ) );
 		const fx = dx / mag, fz = dz / mag;
 		const rx = fz, rz = - fx;
 
 		const LANE = 1.1;
-		const base = rl[ 0 ];
-		const angle = Math.atan2( fx, fz );
+		const base = c0;
+		const angle = startMarker ? startMarker.rotationY : Math.atan2( fx, fz );
 
 		const grid = [];
 		for ( let i = 0; i < numCars; i ++ ) {
@@ -268,7 +300,7 @@ export async function init() {
 
 	const carsParam = new URLSearchParams( window.location.search ).get( 'cars' );
 	const TOTAL_CARS = carsParam ? ( parseInt( carsParam, 10 ) || 4 ) : 4;
-	const startGrid = computeStartGrid( raceLine, TOTAL_CARS );
+	const startGrid = computeStartGrid( raceLine, TOTAL_CARS, devMap ? devMap.start : null );
 
 	const raceHUD = new RaceHUD();
 	raceHUD.init();
@@ -318,20 +350,33 @@ export async function init() {
 	world._OL_MOVING = OL_MOVING;
 	world._OL_STATIC = OL_STATIC;
 
-	buildWallColliders( world, null, customCells );
+	if ( devMap ) {
+
+		buildDevMapColliders( world, null, devMap );
+
+	} else {
+
+		buildWallColliders( world, null, customCells );
+
+	}
 
 	const roadHalf = groundSize / 2;
-	rigidBody.create( world, {
-		shape: box.create( { halfExtents: [ roadHalf, 0.01, roadHalf ] } ),
-		motionType: MotionType.STATIC,
-		objectLayer: OL_STATIC,
-		position: [ bounds.centerX, - 0.125, bounds.centerZ ],
-		friction: 5.0,
-		restitution: 0.0,
-	} );
+	if ( ! devMap || devMap.driveAreas.length === 0 ) {
+
+		rigidBody.create( world, {
+			shape: box.create( { halfExtents: [ roadHalf, 0.01, roadHalf ] } ),
+			motionType: MotionType.STATIC,
+			objectLayer: OL_STATIC,
+			position: [ bounds.centerX, - 0.125, bounds.centerZ ],
+			friction: 5.0,
+			restitution: 0.0,
+		} );
+
+	}
 
 	// ─── Player Vehicle ─────────────────────────────────────────
-	const playerGrid = startGrid ? startGrid[ TOTAL_CARS - 1 ] : { position: spawn ? spawn.position : [ 3.5, 0.5, 5 ], angle: spawn ? spawn.angle : 0, startCell: 0 };
+	const devSpawn = devMap ? computeDevMapSpawn( devMap ) : null;
+	const playerGrid = startGrid ? startGrid[ TOTAL_CARS - 1 ] : { position: devSpawn ? devSpawn.position : ( spawn ? spawn.position : [ 3.5, 0.5, 5 ] ), angle: devSpawn ? devSpawn.angle : ( spawn ? spawn.angle : 0 ), startCell: 0 };
 	const sphereBody = createSphereBody( world, playerGrid.position );
 
 	const vehicle = new Vehicle();

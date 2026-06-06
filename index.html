@@ -111,6 +111,7 @@
 			<div class="menu-actions">
 				<button id="play-btn" class="menu-btn primary">Play</button>
 				<a id="menu-editor-link" class="menu-btn" href="editor.html">Level Editor</a>
+				<a id="menu-dev-editor-link" class="menu-btn" href="dev-editor.html">Dev Map Editor</a>
 			</div>
 		</div>
 	</div>
@@ -121,9 +122,11 @@
 	<script type="module">
 		const params = new URLSearchParams( location.search );
 		const map = params.get( 'map' );
+		const devMap = params.get( 'devMap' );
 		const autoPlay = params.get( 'play' ) === '1';
 		const editorLink = document.getElementById( 'editor-link' );
 		const menuEditorLink = document.getElementById( 'menu-editor-link' );
+		const menuDevEditorLink = document.getElementById( 'menu-dev-editor-link' );
 		const mainMenu = document.getElementById( 'main-menu' );
 		const playBtn = document.getElementById( 'play-btn' );
 		let gameStarted = false;
@@ -133,6 +136,12 @@
 			editorLink.href = editUrl;
 			editorLink.textContent = 'Edit this track';
 			menuEditorLink.href = editUrl;
+		}
+
+		if ( devMap ) {
+			editorLink.href = 'dev-editor.html';
+			editorLink.textContent = 'Edit dev map';
+			menuDevEditorLink.href = 'dev-editor.html';
 		}
 
 		async function startGame() {
