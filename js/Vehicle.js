@@ -58,7 +58,9 @@ export class Vehicle {
 
 	}
 
-	init( model ) {
+	init( model, options = {} ) {
+
+		const shadowsEnabled = options.shadows !== false;
 
 		const vehicleModel = model.clone();
 
@@ -96,8 +98,8 @@ export class Vehicle {
 
 			if ( child.isMesh ) {
 
-				child.castShadow = true;
-				child.receiveShadow = true;
+				child.castShadow = shadowsEnabled;
+				child.receiveShadow = shadowsEnabled;
 
 			}
 

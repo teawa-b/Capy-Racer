@@ -15,6 +15,10 @@ export class RaceHUD {
 		this.countdownEl = null;
 		this.lapFlashEl = null;
 		this._flashTimeout = null;
+		this._lastShow = null;
+		this._lastPositionHtml = '';
+		this._lastLapHtml = '';
+		this._lastTimerText = '';
 
 	}
 
@@ -161,25 +165,46 @@ export class RaceHUD {
 
 		const show = race.state === RaceState.COUNTDOWN || race.state === RaceState.RACING;
 
-		this.positionEl.style.display = show ? '' : 'none';
-		this.lapEl.style.display = show ? '' : 'none';
-		this.timerEl.style.display = show ? '' : 'none';
+		if ( show !== this._lastShow ) {
+
+			this.positionEl.style.display = show ? '' : 'none';
+			this.lapEl.style.display = show ? '' : 'none';
+			this.timerEl.style.display = show ? '' : 'none';
+			this._lastShow = show;
+
+		}
 
 		if ( ! show ) return;
 
 		// Position
 		const pos = race.position;
 		const suffix = pos === 1 ? 'st' : pos === 2 ? 'nd' : pos === 3 ? 'rd' : 'th';
-		this.positionEl.innerHTML =
-			`${ pos }<span class="suffix">${ suffix }</span><span class="total"> / ${ race.totalRacers }</span>`;
+		const positionHtml = `${ pos }<span class="suffix">${ suffix }</span><span class="total"> / ${ race.totalRacers }</span>`;
+		if ( positionHtml !== this._lastPositionHtml ) {
+
+			this.positionEl.innerHTML = positionHtml;
+			this._lastPositionHtml = positionHtml;
+
+		}
 
 		// Lap
 		const currentLap = Math.max( 1, Math.min( race.completedLaps + 1, race.totalLaps ) );
-		this.lapEl.innerHTML =
-			`<span class="label">Lap </span>${ currentLap }<span class="label"> / ${ race.totalLaps }</span>`;
+		const lapHtml = `<span class="label">Lap </span>${ currentLap }<span class="label"> / ${ race.totalLaps }</span>`;
+		if ( lapHtml !== this._lastLapHtml ) {
+
+			this.lapEl.innerHTML = lapHtml;
+			this._lastLapHtml = lapHtml;
+
+		}
 
 		// Timer
-		this.timerEl.textContent = race.formatTime();
+		const timerText = race.formatTime();
+		if ( timerText !== this._lastTimerText ) {
+
+			this.timerEl.textContent = timerText;
+			this._lastTimerText = timerText;
+
+		}
 
 	}
 

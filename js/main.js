@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { createWorldSettings, createWorld, addBroadphaseLayer, addObjectLayer, enableCollision, registerAll, updateWorld, rigidBody, box, MotionType } from 'crashcat';
 import { Vehicle } from './Vehicle.js';
 import { AIVehicle } from './AIVehicle.js';
@@ -16,20 +15,61 @@ import { GameAudio } from './Audio.js';
 import { XRManager } from './XR.js';
 import { FaceTracker } from './FaceTracker.js';
 
+const QUALITY_PRESETS = {
+	low: {
+		maxPixelRatio: 1,
+		antialias: false,
+		shadows: false,
+		shadowMapSize: 512,
+	},
+	medium: {
+		maxPixelRatio: 1.25,
+		antialias: true,
+		shadows: true,
+		shadowMapSize: 1024,
+	},
+	high: {
+		maxPixelRatio: 1.5,
+		antialias: true,
+		shadows: true,
+		shadowMapSize: 2048,
+	},
+	ultra: {
+		maxPixelRatio: 2,
+		antialias: true,
+		shadows: true,
+		shadowMapSize: 4096,
+	},
+};
 
-const renderer = new THREE.WebGLRenderer( { antialias: true, outputBufferType: THREE.HalfFloatType } );
+function chooseQualityPreset() {
+
+	const params = new URLSearchParams( window.location.search );
+	const requested = params.get( 'quality' );
+	if ( QUALITY_PRESETS[ requested ] ) return QUALITY_PRESETS[ requested ];
+
+	const isCoarsePointer = matchMedia( '(pointer: coarse)' ).matches;
+	const cores = navigator.hardwareConcurrency || 4;
+	const memory = navigator.deviceMemory || 4;
+	const highDprDesktop = window.devicePixelRatio > 1.5 && ! isCoarsePointer;
+
+	if ( cores <= 4 || memory <= 4 || highDprDesktop ) return QUALITY_PRESETS.medium;
+	return QUALITY_PRESETS.high;
+
+}
+
+const quality = chooseQualityPreset();
+
+const renderer = new THREE.WebGLRenderer( {
+	antialias: quality.antialias,
+	powerPreference: 'high-performance',
+} );
 renderer.setSize( window.innerWidth, window.innerHeight );
-renderer.setPixelRatio( window.devicePixelRatio );
-renderer.shadowMap.enabled = true;
+renderer.setPixelRatio( Math.min( window.devicePixelRatio, quality.maxPixelRatio ) );
+renderer.shadowMap.enabled = quality.shadows;
+renderer.shadowMap.type = THREE.PCFShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.0;
-
-const bloomPass = new UnrealBloomPass( new THREE.Vector2( window.innerWidth, window.innerHeight ) );
-bloomPass.strength = 0.02;
-bloomPass.radius = 0.02;
-bloomPass.threshold = 0.5;
-
-renderer.setEffects( [ bloomPass ] );
 
 document.body.appendChild( renderer.domElement );
 
@@ -39,8 +79,8 @@ scene.fog = new THREE.Fog( 0xadb2ba, 30, 55 );
 
 const dirLight = new THREE.DirectionalLight( 0xffffff, 5 );
 dirLight.position.set( 11.4, 15, -5.3 );
-dirLight.castShadow = true;
-dirLight.shadow.mapSize.setScalar( 4096 );
+dirLight.castShadow = quality.shadows;
+dirLight.shadow.mapSize.setScalar( quality.shadowMapSize );
 dirLight.shadow.camera.near = 0.5;
 dirLight.shadow.camera.far = 60;
 scene.add( dirLight );
@@ -53,6 +93,7 @@ const xr = new XRManager( renderer );
 window.addEventListener( 'resize', () => {
 
 	renderer.setSize( window.innerWidth, window.innerHeight );
+	renderer.setPixelRatio( Math.min( window.devicePixelRatio, quality.maxPixelRatio ) );
 
 } );
 
@@ -77,6 +118,7 @@ async function loadModels() {
 					if ( child.isMesh ) {
 
 						child.material.side = THREE.FrontSide;
+						child.frustumCulled = true;
 
 					}
 
@@ -154,7 +196,7 @@ export async function init() {
 	scene.add( dirLight );
 	scene.add( hemiLight );
 
-	const decoGroup = buildTrack( gameContainer, models, customCells );
+	const decoGroup = buildTrack( gameContainer, models, customCells, { shadows: quality.shadows } );
 
 	// ─── Race System ───────────────────────────────────────────
 	const cells = customCells || TRACK_CELLS;
@@ -271,7 +313,7 @@ export async function init() {
 	vehicle.prevModelPos.set( playerGrid.position[ 0 ], 0, playerGrid.position[ 2 ] );
 	vehicle.container.rotation.y = playerGrid.angle;
 
-	const vehicleGroup = vehicle.init( models[ 'vehicle-truck-yellow' ] );
+	const vehicleGroup = vehicle.init( models[ 'vehicle-truck-yellow' ], { shadows: quality.shadows } );
 	gameContainer.add( vehicleGroup );
 
 	// ─── AI Vehicles ─────────────────────────────────────────────
@@ -289,7 +331,7 @@ export async function init() {
 		ai.prevModelPos.set( gridSlot.position[ 0 ], 0, gridSlot.position[ 2 ] );
 		ai.container.rotation.y = gridSlot.angle;
 
-		const aiGroup = ai.init( models[ modelName ] );
+		const aiGroup = ai.init( models[ modelName ], { shadows: quality.shadows } );
 		gameContainer.add( aiGroup );
 
 		return ai;
@@ -348,7 +390,11 @@ export async function init() {
 
 	xr.onSessionStart = ( mode ) => {
 
-		renderer.setEffects( [] );
+		if ( ! quality.shadows ) {
+
+			renderer.shadowMap.enabled = false;
+
+		}
 		scene.fog.near = 1000;
 		scene.fog.far = 1000;
 		if ( mode === 'ar' ) decoGroup.visible = false;
@@ -379,7 +425,7 @@ export async function init() {
 
 	xr.onSessionEnd = () => {
 
-		renderer.setEffects( [ bloomPass ] );
+		renderer.shadowMap.enabled = quality.shadows;
 		scene.fog.near = fogNear;
 		scene.fog.far = fogFar;
 		decoGroup.visible = true;

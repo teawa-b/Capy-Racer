@@ -7,6 +7,21 @@ export const GRID_SCALE = 0.75;
 
 const _dummy = new THREE.Object3D();
 
+export function applyShadowSettings( object, enabled ) {
+
+	object.traverse( ( child ) => {
+
+		if ( child.isMesh ) {
+
+			child.castShadow = enabled;
+			child.receiveShadow = enabled;
+
+		}
+
+	} );
+
+}
+
 export const TRACK_CELLS = [
 	[ -3, -3, 'track-corner',   16 ],
 	[ -2, -3, 'track-straight', 22 ],
@@ -115,7 +130,9 @@ const NPC_TRUCKS = [
 	[ 'vehicle-truck-red',    -1.36, -0.15, -23.80, 155.9 ],
 ];
 
-export function buildTrack( scene, models, customCells ) {
+export function buildTrack( scene, models, customCells, options = {} ) {
+
+	const shadowsEnabled = options.shadows !== false;
 
 	const trackGroup = new THREE.Group();
 	trackGroup.position.y = -0.5;
@@ -237,8 +254,8 @@ export function buildTrack( scene, models, customCells ) {
 				if ( ! child.isMesh ) return;
 
 				const inst = new THREE.InstancedMesh( child.geometry, child.material, count );
-				inst.castShadow = true;
-				inst.receiveShadow = true;
+				inst.castShadow = shadowsEnabled;
+				inst.receiveShadow = shadowsEnabled;
 
 				for ( let i = 0; i < count; i ++ ) {
 
@@ -269,8 +286,8 @@ export function buildTrack( scene, models, customCells ) {
 				if ( ! child.isMesh ) return;
 
 				const inst = new THREE.InstancedMesh( child.geometry, child.material, tentCount );
-				inst.castShadow = true;
-				inst.receiveShadow = true;
+				inst.castShadow = shadowsEnabled;
+				inst.receiveShadow = shadowsEnabled;
 
 				for ( let i = 0; i < tentCount; i ++ ) {
 
@@ -296,17 +313,7 @@ export function buildTrack( scene, models, customCells ) {
 	scene.add( trackGroup );
 
 	trackGroup.updateMatrixWorld( true );
-
-	trackGroup.traverse( ( child ) => {
-
-		if ( child.isMesh ) {
-
-			child.castShadow = true;
-			child.receiveShadow = true;
-
-		}
-
-	} );
+	applyShadowSettings( trackGroup, shadowsEnabled );
 
 	if ( ! customCells ) {
 
@@ -318,16 +325,7 @@ export function buildTrack( scene, models, customCells ) {
 			const npc = src.clone();
 			npc.position.set( x, y, z );
 			npc.rotation.y = THREE.MathUtils.degToRad( rotDeg + 180 );
-			npc.traverse( ( c ) => {
-
-				if ( c.isMesh ) {
-
-					c.castShadow = true;
-					c.receiveShadow = true;
-
-				}
-
-			} );
+			applyShadowSettings( npc, shadowsEnabled );
 			scene.add( npc );
 
 		}
