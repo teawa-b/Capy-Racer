@@ -16,7 +16,10 @@
 			transform: translateX(-50%);
 			display: flex;
 			align-items: center;
+			justify-content: center;
+			flex-wrap: wrap;
 			gap: 6px;
+			max-width: calc(100vw - 24px);
 			padding: 8px 10px;
 			background: rgba(20, 20, 30, 0.85);
 			backdrop-filter: blur(12px);
@@ -110,16 +113,20 @@
 		<div class="separator"></div>
 		<button id="btn-play" class="action">Play</button>
 		<button id="btn-share" class="action">Share</button>
+		<button id="btn-save-file" class="action">Save File</button>
+		<button id="btn-load-file">Load File</button>
 		<div class="separator"></div>
 		<button id="btn-clear" class="danger">Clear</button>
 	</div>
 
 	<div id="toast"></div>
+	<input id="track-file-input" type="file" accept=".capytrack,application/json,.json,text/plain" hidden>
 
 	<script type="module">
 	import * as THREE from 'three';
 	import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 	import { ORIENT_DEG, CELL_RAW, GRID_SCALE, encodeCells, decodeCells } from './js/Track.js';
+	import { createMapFile, makeMapFileName, parseMapFileText } from './js/MapFile.js';
 
 	// ─── Auto-tile lookup ─────────────────────────────────────
 	// Bitmask: N=8 S=4 E=2 W=1
@@ -774,16 +781,44 @@
 
 	function save() {
 
-		const arr = [];
-		for ( const [ key, cell ] of grid ) {
+		const encoded = encodeCells( getCellsArray() );
+		localStorage.setItem( 'racing-editor-cells', encoded );
+		return encoded;
 
-			const [ gx, gz ] = key.split( ',' ).map( Number );
-			arr.push( [ gx, gz, cell.type, cell.orient ] );
+	}
+
+	function clearGridMeshes() {
+
+		for ( const [ , cell ] of grid ) {
+
+			if ( cell.mesh ) trackGroup.remove( cell.mesh );
 
 		}
 
-		const encoded = encodeCells( arr );
-		localStorage.setItem( 'racing-editor-cells', encoded );
+		grid.clear();
+
+	}
+
+	function loadCellsArray( cells ) {
+
+		clearGridMeshes();
+
+		for ( const [ gx, gz, type, orient ] of cells ) {
+
+			const isFinish = ( type === 'track-finish' );
+			const cell = { type, orient, isFinish, mesh: null };
+			grid.set( cellKey( gx, gz ), cell );
+			placeMesh( gx, gz, cell );
+
+		}
+
+		if ( ! [ ...grid.values() ].some( cell => cell.isFinish ) ) {
+
+			placeFinish();
+
+		}
+
+		save();
 
 	}
 
@@ -797,20 +832,71 @@
 
 		try {
 
-			const arr = decodeCells( encoded );
-
-			for ( const [ gx, gz, type, orient ] of arr ) {
-
-				const isFinish = ( type === 'track-finish' );
-				const cell = { type, orient, isFinish, mesh: null };
-				grid.set( cellKey( gx, gz ), cell );
-				placeMesh( gx, gz, cell );
-
-			}
+			loadCellsArray( decodeCells( encoded ) );
 
 		} catch ( e ) {
 
 			console.warn( 'Failed to load saved map', e );
+
+		}
+
+	}
+
+	function saveTrackFile() {
+
+		if ( grid.size === 0 ) {
+
+			showToast( 'Draw some road first!' );
+			return;
+
+		}
+
+		const cells = getCellsArray();
+		const encoded = encodeCells( cells );
+		const data = createMapFile( cells, encoded, 'Capy Track' );
+		const blob = new Blob( [ JSON.stringify( data, null, '\t' ) ], { type: 'application/json' } );
+		const url = URL.createObjectURL( blob );
+		const link = document.createElement( 'a' );
+		link.href = url;
+		link.download = makeMapFileName();
+		document.body.appendChild( link );
+		link.click();
+		link.remove();
+		URL.revokeObjectURL( url );
+		localStorage.setItem( 'racing-editor-cells', encoded );
+		showToast( 'Track file saved' );
+
+	}
+
+	async function loadTrackFile( file ) {
+
+		if ( ! file ) return;
+
+		try {
+
+			const text = await file.text();
+			const parsed = parseMapFileText( text );
+			let cells = parsed.cells;
+
+			if ( parsed.encoded ) {
+
+				cells = decodeCells( parsed.encoded );
+
+			}
+
+			if ( ! Array.isArray( cells ) ) {
+
+				throw new Error( 'Track file does not contain cells' );
+
+			}
+
+			loadCellsArray( cells );
+			showToast( 'Track loaded' );
+
+		} catch ( e ) {
+
+			console.warn( 'Failed to load track file', e );
+			showToast( 'Could not load track file' );
 
 		}
 
@@ -834,6 +920,7 @@
 
 	const btnRoad = document.getElementById( 'btn-road' );
 	const btnErase = document.getElementById( 'btn-erase' );
+	const trackFileInput = document.getElementById( 'track-file-input' );
 
 	function selectTool( t ) {
 
@@ -870,7 +957,7 @@
 		}
 
 		const encoded = encodeCells( getCellsArray() );
-		window.open( 'index.html?map=' + encoded, '_blank' );
+		window.open( 'index.html?map=' + encodeURIComponent( encoded ) + '&play=1', '_blank' );
 
 	} );
 
@@ -885,7 +972,7 @@
 
 		const encoded = encodeCells( getCellsArray() );
 		const base = window.location.href.replace( /editor\.html.*/, '' );
-		const url = base + 'index.html?map=' + encoded;
+		const url = base + 'index.html?map=' + encodeURIComponent( encoded );
 
 		navigator.clipboard.writeText( url ).then( () => {
 
@@ -896,6 +983,21 @@
 			showToast( url );
 
 		} );
+
+	} );
+
+	document.getElementById( 'btn-save-file' ).addEventListener( 'click', saveTrackFile );
+
+	document.getElementById( 'btn-load-file' ).addEventListener( 'click', () => {
+
+		trackFileInput.value = '';
+		trackFileInput.click();
+
+	} );
+
+	trackFileInput.addEventListener( 'change', () => {
+
+		loadTrackFile( trackFileInput.files[ 0 ] );
 
 	} );
 

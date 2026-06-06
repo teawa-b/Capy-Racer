@@ -101,7 +101,12 @@ async function loadModels() {
 
 }
 
-async function init() {
+let initialized = false;
+
+export async function init() {
+
+	if ( initialized ) return;
+	initialized = true;
 
 	registerAll();
 	await loadModels();
@@ -495,5 +500,3 @@ async function init() {
 	renderer.setAnimationLoop( animate );
 
 }
-
-init();
