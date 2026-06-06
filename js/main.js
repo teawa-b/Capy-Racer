@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { createWorldSettings, createWorld, addBroadphaseLayer, addObjectLayer, enableCollision, registerAll, updateWorld, rigidBody, box, MotionType } from 'crashcat';
 import { Vehicle } from './Vehicle.js';
 import { AIVehicle } from './AIVehicle.js';
@@ -17,28 +18,36 @@ import { FaceTracker } from './FaceTracker.js';
 
 const QUALITY_PRESETS = {
 	low: {
+		name: 'low',
 		maxPixelRatio: 1,
 		antialias: false,
 		shadows: false,
 		shadowMapSize: 512,
+		bloom: false,
 	},
 	medium: {
+		name: 'medium',
 		maxPixelRatio: 1.25,
 		antialias: true,
 		shadows: true,
 		shadowMapSize: 1024,
+		bloom: false,
 	},
 	high: {
-		maxPixelRatio: 1.5,
-		antialias: true,
-		shadows: true,
-		shadowMapSize: 2048,
-	},
-	ultra: {
+		name: 'high',
 		maxPixelRatio: 2,
 		antialias: true,
 		shadows: true,
+		shadowMapSize: 2048,
+		bloom: true,
+	},
+	ultra: {
+		name: 'ultra',
+		maxPixelRatio: 3,
+		antialias: true,
+		shadows: true,
 		shadowMapSize: 4096,
+		bloom: true,
 	},
 };
 
@@ -49,11 +58,22 @@ function chooseQualityPreset() {
 	if ( QUALITY_PRESETS[ requested ] ) return QUALITY_PRESETS[ requested ];
 
 	const isCoarsePointer = matchMedia( '(pointer: coarse)' ).matches;
-	const cores = navigator.hardwareConcurrency || 4;
-	const memory = navigator.deviceMemory || 4;
+	const cores = navigator.hardwareConcurrency;
+	const hasCoreInfo = typeof cores === 'number';
+	const memory = navigator.deviceMemory;
+	const hasMemoryInfo = typeof memory === 'number';
 	const highDprDesktop = window.devicePixelRatio > 1.5 && ! isCoarsePointer;
+	const lowMemory = hasMemoryInfo && memory <= 4;
+	const lowCoreCount = hasCoreInfo && cores <= 4;
 
-	if ( cores <= 4 || memory <= 4 || highDprDesktop ) return QUALITY_PRESETS.medium;
+	if ( isCoarsePointer ) {
+
+		if ( lowCoreCount || lowMemory ) return QUALITY_PRESETS.medium;
+		return QUALITY_PRESETS.ultra;
+
+	}
+
+	if ( lowCoreCount || lowMemory || highDprDesktop ) return QUALITY_PRESETS.medium;
 	return QUALITY_PRESETS.high;
 
 }
@@ -70,6 +90,14 @@ renderer.shadowMap.enabled = quality.shadows;
 renderer.shadowMap.type = THREE.PCFShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.0;
+
+const bloomPass = new UnrealBloomPass( new THREE.Vector2( window.innerWidth, window.innerHeight ) );
+bloomPass.strength = 0.02;
+bloomPass.radius = 0.02;
+bloomPass.threshold = 0.5;
+if ( quality.bloom ) renderer.setEffects( [ bloomPass ] );
+
+window.__CAPY_RENDER_QUALITY__ = quality;
 
 document.body.appendChild( renderer.domElement );
 
@@ -390,6 +418,7 @@ export async function init() {
 
 	xr.onSessionStart = ( mode ) => {
 
+		renderer.setEffects( [] );
 		if ( ! quality.shadows ) {
 
 			renderer.shadowMap.enabled = false;
@@ -425,6 +454,7 @@ export async function init() {
 
 	xr.onSessionEnd = () => {
 
+		if ( quality.bloom ) renderer.setEffects( [ bloomPass ] );
 		renderer.shadowMap.enabled = quality.shadows;
 		scene.fog.near = fogNear;
 		scene.fog.far = fogFar;
