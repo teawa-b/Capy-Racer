@@ -207,6 +207,7 @@
 	import * as THREE from 'three';
 	import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 	import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+	import { TransformControls } from 'three/addons/controls/TransformControls.js';
 	import {
 		createEmptyDevMap,
 		createDevMapFile,
@@ -236,6 +237,7 @@
 	let selectedAssetId = null;
 	let selected = null;
 	let drag = null;
+	let transformActive = false;
 	let spaceDown = false;
 	let toastTimer = 0;
 
@@ -267,6 +269,29 @@
 	controls.touches.ONE = null;
 	controls.touches.TWO = THREE.TOUCH.DOLLY_PAN;
 	controls.update();
+
+	const transformControls = new TransformControls( camera, renderer.domElement );
+	transformControls.setMode( 'translate' );
+	transformControls.setSpace( 'world' );
+	transformControls.setSize( 0.8 );
+	scene.add( transformControls.getHelper() );
+
+	transformControls.addEventListener( 'dragging-changed', ( event ) => {
+
+		transformActive = event.value;
+		controls.enabled = ! event.value;
+
+		if ( ! event.value ) {
+
+			syncSelectedFromGizmo();
+			rebuild();
+			saveLocal();
+
+		}
+
+	} );
+
+	transformControls.addEventListener( 'objectChange', syncSelectedFromGizmo );
 
 	const dirLight = new THREE.DirectionalLight( 0xffffff, 4 );
 	dirLight.position.set( 28, 50, 18 );
@@ -336,7 +361,7 @@
 	function setStatus() {
 
 		const labels = {
-			select: 'Select and drag existing models, boxes, waypoints, start, or finish.',
+			select: 'Select an item, then use the axis gizmo to move it.',
 			place: 'Click the map to place the selected imported model.',
 			drive: 'Drag a rectangle to mark a drivable surface.',
 			hitbox: 'Drag a rectangle to add a collision hitbox.',
@@ -412,10 +437,9 @@
 
 			}
 			selectedAssetId = map.assets[ 0 ]?.id || null;
-			selected = null;
+			selectEditorItem( null );
 			rebuild();
 			renderAssets();
-			renderProperties();
 			saveLocal();
 			showToast( 'Map loaded' );
 
@@ -461,10 +485,9 @@
 		Object.assign( map, fresh );
 		assetScenes.clear();
 		selectedAssetId = null;
-		selected = null;
+		selectEditorItem( null );
 		rebuild();
 		renderAssets();
-		renderProperties();
 		saveLocal();
 		showToast( 'Map cleared' );
 
@@ -571,6 +594,14 @@
 
 	}
 
+	function selectEditorItem( nextSelected ) {
+
+		selected = nextSelected;
+		renderProperties();
+		attachTransformGizmo();
+
+	}
+
 	function addReadonly( parent, name, value ) {
 
 		const label = document.createElement( 'label' );
@@ -630,13 +661,13 @@
 	function deleteSelected() {
 
 		if ( ! selected ) return;
+		transformControls.detach();
 		if ( selected.type === 'object' ) removeById( map.objects, selected.id );
 		if ( selected.type === 'drive' ) removeById( map.driveAreas, selected.id );
 		if ( selected.type === 'hitbox' ) removeById( map.hitboxes, selected.id );
 		if ( selected.type === 'waypoint' ) removeById( map.waypoints, selected.id );
-		selected = null;
+		selectEditorItem( null );
 		rebuild();
-		renderProperties();
 		saveLocal();
 
 	}
@@ -645,6 +676,13 @@
 
 		const index = list.findIndex( item => item.id === id );
 		if ( index !== - 1 ) list.splice( index, 1 );
+
+	}
+
+	function isEditingText() {
+
+		const el = document.activeElement;
+		return el && ( el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable );
 
 	}
 
@@ -729,6 +767,8 @@
 
 	function rebuild() {
 
+		transformControls.detach();
+
 		while ( content.children.length > 0 ) content.remove( content.children[ 0 ] );
 		visualById.clear();
 		rayObjects.length = 0;
@@ -741,6 +781,65 @@
 		addMarkerVisual( 'finish', map.finish );
 
 		renderProperties();
+		attachTransformGizmo();
+
+	}
+
+	function attachTransformGizmo() {
+
+		if ( ! selected ) {
+
+			transformControls.detach();
+			return;
+
+		}
+
+		const id = selected.type === 'start' || selected.type === 'finish' ? selected.type : selected.id;
+		const visual = visualById.get( id );
+
+		if ( visual ) {
+
+			transformControls.showY = selected.type === 'object' || selected.type === 'hitbox';
+			transformControls.attach( visual );
+
+		} else {
+
+			transformControls.detach();
+
+		}
+
+	}
+
+	function syncSelectedFromGizmo() {
+
+		if ( ! selected || ! transformControls.object ) return;
+
+		const target = getSelectedTarget();
+		const object = transformControls.object;
+		if ( ! target ) return;
+
+		if ( selected.type === 'object' ) {
+
+			target.position[ 0 ] = object.position.x;
+			target.position[ 1 ] = object.position.y;
+			target.position[ 2 ] = object.position.z;
+			target.rotationY = object.rotation.y;
+			target.scale = object.scale.x;
+
+		} else if ( selected.type === 'hitbox' ) {
+
+			target.x = object.position.x;
+			target.y = object.position.y;
+			target.z = object.position.z;
+			target.rotationY = object.rotation.y;
+
+		} else if ( selected.type === 'drive' || selected.type === 'waypoint' || selected.type === 'start' || selected.type === 'finish' ) {
+
+			target.x = object.position.x;
+			target.z = object.position.z;
+			if ( 'rotationY' in target ) target.rotationY = object.rotation.y;
+
+		}
 
 	}
 
@@ -882,6 +981,7 @@
 	el.addEventListener( 'pointerdown', ( e ) => {
 
 		if ( e.button !== 0 || spaceDown || e.ctrlKey || e.metaKey ) return;
+		if ( transformActive || transformControls.axis ) return;
 
 		el.setPointerCapture( e.pointerId );
 		const world = screenToWorld( e );
@@ -890,15 +990,7 @@
 		if ( tool === 'select' ) {
 
 			const picked = pick( e );
-			selected = picked;
-			renderProperties();
-
-			if ( picked ) {
-
-				const target = getSelectedTarget();
-				drag = { type: 'move', start: world, target, original: JSON.parse( JSON.stringify( target ) ) };
-
-			}
+			selectEditorItem( picked );
 			return;
 
 		}
@@ -962,33 +1054,10 @@
 	el.addEventListener( 'pointermove', ( e ) => {
 
 		if ( ! drag ) return;
+		if ( transformActive ) return;
 
 		const world = screenToWorld( e );
 		if ( ! world ) return;
-
-		if ( drag.type === 'move' ) {
-
-			const dx = world.x - drag.start.x;
-			const dz = world.z - drag.start.z;
-			const t = drag.target;
-			if ( ! t ) return;
-
-			if ( selected.type === 'object' ) {
-
-				t.position[ 0 ] = drag.original.position[ 0 ] + dx;
-				t.position[ 2 ] = drag.original.position[ 2 ] + dz;
-
-			} else {
-
-				t.x = drag.original.x + dx;
-				t.z = drag.original.z + dz;
-
-			}
-
-			rebuild();
-			return;
-
-		}
 
 		if ( drag.type === 'box-create' ) {
 
@@ -1007,8 +1076,6 @@
 
 		}
 
-		if ( drag?.type === 'move' ) saveLocal();
-
 		if ( drag?.preview ) content.remove( drag.preview );
 		drag = null;
 		el.style.cursor = spaceDown ? 'grab' : '';
@@ -1024,7 +1091,12 @@
 			e.preventDefault();
 
 		}
-		if ( e.key === 'Delete' || e.key === 'Backspace' ) deleteSelected();
+		if ( e.key === 'Delete' && ! isEditingText() ) {
+
+			deleteSelected();
+			e.preventDefault();
+
+		}
 
 	} );
 
