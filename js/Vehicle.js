@@ -36,6 +36,7 @@ export class Vehicle {
 
 		this.rigidBody = null;
 		this.physicsWorld = null;
+		this.collisionRadius = 0.5;
 
 		this.modelVelocity = new THREE.Vector3();
 		this.prevModelPos = new THREE.Vector3( 3.5, 0, 5 );
@@ -224,7 +225,7 @@ export class Vehicle {
 
 		this.container.position.set(
 			this.spherePos.x,
-			this.spherePos.y - 0.5,
+			this.spherePos.y - this.collisionRadius,
 			this.spherePos.z
 		);
 

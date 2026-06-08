@@ -120,10 +120,10 @@ export function buildWallColliders( world, debugGroup, customCells ) {
 
 }
 
-export function createSphereBody( world, spawnPos ) {
+export function createSphereBody( world, spawnPos, radius = 0.5 ) {
 
 	const body = rigidBody.create( world, {
-		shape: sphere.create( { radius: 0.5 } ),
+		shape: sphere.create( { radius } ),
 		motionType: MotionType.DYNAMIC,
 		objectLayer: world._OL_MOVING,
 		position: spawnPos || [ 3.5, 0.5, 5 ],

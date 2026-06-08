@@ -188,6 +188,10 @@
 			<button id="save-map" class="action">Save Map</button>
 			<button id="play-map" class="action">Play</button>
 		</div>
+		<div class="tool-group">
+			<button data-transform="translate" class="active">Move</button>
+			<button data-transform="scale">Scale</button>
+		</div>
 		<button id="clear-map" class="danger">Clear</button>
 	</div>
 
@@ -238,6 +242,7 @@
 	let selected = null;
 	let drag = null;
 	let transformActive = false;
+	let transformMode = 'translate';
 	let spaceDown = false;
 	let toastTimer = 0;
 
@@ -358,6 +363,14 @@
 
 	}
 
+	function setTransformMode( mode ) {
+
+		transformMode = mode;
+		transformControls.setMode( mode );
+		document.querySelectorAll( '[data-transform]' ).forEach( btn => btn.classList.toggle( 'active', btn.dataset.transform === mode ) );
+
+	}
+
 	function setStatus() {
 
 		const labels = {
@@ -376,6 +389,12 @@
 	document.querySelectorAll( '[data-tool]' ).forEach( btn => {
 
 		btn.addEventListener( 'click', () => setTool( btn.dataset.tool ) );
+
+	} );
+
+	document.querySelectorAll( '[data-transform]' ).forEach( btn => {
+
+		btn.addEventListener( 'click', () => setTransformMode( btn.dataset.transform ) );
 
 	} );
 
@@ -580,7 +599,9 @@
 		} else {
 
 			addNumber( props, 'X', target.x, v => target.x = v );
+			addNumber( props, 'Y', target.y, v => target.y = v );
 			addNumber( props, 'Z', target.z, v => target.z = v );
+			addNumber( props, 'Scale', target.scale, v => target.scale = Math.max( 0.01, v ), 0.1 );
 			addDegrees( props, 'Rotation', target.rotationY, v => target.rotationY = v );
 			if ( selected.type === 'finish' ) addNumber( props, 'Width', target.width, v => target.width = Math.max( 1, v ) );
 
@@ -799,7 +820,8 @@
 
 		if ( visual ) {
 
-			transformControls.showY = selected.type === 'object' || selected.type === 'hitbox';
+			transformControls.showY = selected.type === 'object' || selected.type === 'hitbox' || selected.type === 'start' || selected.type === 'finish';
+			transformControls.setMode( transformMode );
 			transformControls.attach( visual );
 
 		} else {
@@ -833,11 +855,19 @@
 			target.z = object.position.z;
 			target.rotationY = object.rotation.y;
 
-		} else if ( selected.type === 'drive' || selected.type === 'waypoint' || selected.type === 'start' || selected.type === 'finish' ) {
+		} else if ( selected.type === 'drive' || selected.type === 'waypoint' ) {
 
 			target.x = object.position.x;
 			target.z = object.position.z;
 			if ( 'rotationY' in target ) target.rotationY = object.rotation.y;
+
+		} else if ( selected.type === 'start' || selected.type === 'finish' ) {
+
+			target.x = object.position.x;
+			target.y = object.position.y;
+			target.z = object.position.z;
+			target.rotationY = object.rotation.y;
+			target.scale = object.scale.x;
 
 		}
 
@@ -921,8 +951,9 @@
 	function addMarkerVisual( type, marker ) {
 
 		const group = new THREE.Group();
-		group.position.set( marker.x, 0.25, marker.z );
+		group.position.set( marker.x, marker.y, marker.z );
 		group.rotation.y = marker.rotationY;
+		group.scale.setScalar( marker.scale );
 		group.userData.editor = { type, id: type };
 
 		if ( type === 'start' ) {
@@ -1042,7 +1073,9 @@
 		if ( tool === 'start' || tool === 'finish' ) {
 
 			map[ tool ].x = world.x;
+			map[ tool ].y = 0;
 			map[ tool ].z = world.z;
+			map[ tool ].scale = map[ tool ].scale || 1;
 			selected = { type: tool, id: tool };
 			rebuild();
 			saveLocal();

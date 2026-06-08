@@ -265,7 +265,7 @@ export async function init() {
 
 		if ( rl.length < 2 && ! startMarker ) return null;
 
-		const c0 = startMarker ? { worldX: startMarker.x, worldZ: startMarker.z } : rl[ 0 ];
+		const c0 = startMarker ? { worldX: startMarker.x, worldY: startMarker.y || 0, worldZ: startMarker.z } : rl[ 0 ];
 		const c1 = startMarker
 			? { worldX: startMarker.x + Math.sin( startMarker.rotationY ), worldZ: startMarker.z + Math.cos( startMarker.rotationY ) }
 			: rl[ 1 ];
@@ -273,8 +273,9 @@ export async function init() {
 		const mag = Math.max( 0.0001, Math.sqrt( dx * dx + dz * dz ) );
 		const fx = dx / mag, fz = dz / mag;
 		const rx = fz, rz = - fx;
+		const scale = startMarker ? Math.max( 0.01, startMarker.scale || 1 ) : 1;
 
-		const LANE = 1.1;
+		const LANE = 1.1 * scale;
 		const base = c0;
 		const angle = startMarker ? startMarker.rotationY : Math.atan2( fx, fz );
 
@@ -283,11 +284,11 @@ export async function init() {
 
 			const row = Math.floor( i / 2 );
 			const col = i % 2;
-			const forwardOffset = 1.4 - row * 2.8;
+			const forwardOffset = ( 1.4 - row * 2.8 ) * scale;
 			const rightOffset = col === 0 ? LANE : - LANE;
 
 			grid.push( {
-				position: [ base.worldX + fx * forwardOffset + rx * rightOffset, 0.5, base.worldZ + fz * forwardOffset + rz * rightOffset ],
+				position: [ base.worldX + fx * forwardOffset + rx * rightOffset, ( base.worldY || 0 ) + 0.5, base.worldZ + fz * forwardOffset + rz * rightOffset ],
 				angle,
 				startCell: 0,
 			} );
@@ -300,6 +301,7 @@ export async function init() {
 
 	const carsParam = new URLSearchParams( window.location.search ).get( 'cars' );
 	const TOTAL_CARS = carsParam ? ( parseInt( carsParam, 10 ) || 4 ) : 4;
+	const startScale = devMap ? Math.max( 0.01, devMap.start.scale || 1 ) : 1;
 	const startGrid = computeStartGrid( raceLine, TOTAL_CARS, devMap ? devMap.start : null );
 
 	const raceHUD = new RaceHUD();
@@ -377,16 +379,18 @@ export async function init() {
 	// ─── Player Vehicle ─────────────────────────────────────────
 	const devSpawn = devMap ? computeDevMapSpawn( devMap ) : null;
 	const playerGrid = startGrid ? startGrid[ TOTAL_CARS - 1 ] : { position: devSpawn ? devSpawn.position : ( spawn ? spawn.position : [ 3.5, 0.5, 5 ] ), angle: devSpawn ? devSpawn.angle : ( spawn ? spawn.angle : 0 ), startCell: 0 };
-	const sphereBody = createSphereBody( world, playerGrid.position );
+	const sphereBody = createSphereBody( world, playerGrid.position, 0.5 * startScale );
 
 	const vehicle = new Vehicle();
 	vehicle.rigidBody = sphereBody;
 	vehicle.physicsWorld = world;
+	vehicle.collisionRadius = 0.5 * startScale;
 	vehicle.spherePos.set( playerGrid.position[ 0 ], playerGrid.position[ 1 ], playerGrid.position[ 2 ] );
 	vehicle.prevModelPos.set( playerGrid.position[ 0 ], 0, playerGrid.position[ 2 ] );
 	vehicle.container.rotation.y = playerGrid.angle;
 
 	const vehicleGroup = vehicle.init( models[ 'vehicle-truck-yellow' ], { shadows: quality.shadows } );
+	vehicleGroup.scale.setScalar( startScale );
 	gameContainer.add( vehicleGroup );
 
 	// ─── AI Vehicles ─────────────────────────────────────────────
@@ -396,15 +400,17 @@ export async function init() {
 		const gridSlot = startGrid ? startGrid[ i ] : { position: [ 3.5, 0.5, 5 ], angle: 0, startCell: 0 };
 		const modelName = AI_MODELS_POOL[ i % AI_MODELS_POOL.length ];
 
-		const aiBody = createSphereBody( world, gridSlot.position );
+		const aiBody = createSphereBody( world, gridSlot.position, 0.5 * startScale );
 		const ai = new AIVehicle( raceLine, 'medium' );
 		ai.rigidBody = aiBody;
 		ai.physicsWorld = world;
+		ai.collisionRadius = 0.5 * startScale;
 		ai.spherePos.set( gridSlot.position[ 0 ], gridSlot.position[ 1 ], gridSlot.position[ 2 ] );
 		ai.prevModelPos.set( gridSlot.position[ 0 ], 0, gridSlot.position[ 2 ] );
 		ai.container.rotation.y = gridSlot.angle;
 
 		const aiGroup = ai.init( models[ modelName ], { shadows: quality.shadows } );
+		aiGroup.scale.setScalar( startScale );
 		gameContainer.add( aiGroup );
 
 		return ai;

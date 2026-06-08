@@ -19,8 +19,8 @@ export function createEmptyDevMap( name = 'Untitled Dev Map' ) {
 		driveAreas: [],
 		hitboxes: [],
 		waypoints: [],
-		start: { x: 0, z: 0, rotationY: 0 },
-		finish: { x: 0, z: 18, rotationY: 0, width: 8 },
+		start: { x: 0, y: 0, z: 0, rotationY: 0, scale: 1 },
+		finish: { x: 0, y: 0, z: 18, rotationY: 0, scale: 1, width: 8 },
 	} );
 
 }
@@ -38,8 +38,8 @@ export function normalizeDevMap( input = {} ) {
 		driveAreas: Array.isArray( input.driveAreas ) ? input.driveAreas : [],
 		hitboxes: Array.isArray( input.hitboxes ) ? input.hitboxes : [],
 		waypoints: Array.isArray( input.waypoints ) ? input.waypoints : [],
-		start: input.start || { x: 0, z: 0, rotationY: 0 },
-		finish: input.finish || { x: 0, z: 18, rotationY: 0, width: 8 },
+		start: input.start || { x: 0, y: 0, z: 0, rotationY: 0, scale: 1 },
+		finish: input.finish || { x: 0, y: 0, z: 18, rotationY: 0, scale: 1, width: 8 },
 	};
 
 	map.assets = map.assets.map( ( asset ) => ( {
@@ -62,9 +62,9 @@ export function normalizeDevMap( input = {} ) {
 	map.driveAreas = map.driveAreas.map( normalizeArea );
 	map.hitboxes = map.hitboxes.map( normalizeHitbox );
 	map.waypoints = map.waypoints.map( normalizePoint );
-	map.start = normalizeMarker( map.start, { x: 0, z: 0, rotationY: 0 } );
+	map.start = normalizeMarker( map.start, { x: 0, y: 0, z: 0, rotationY: 0, scale: 1 } );
 	map.finish = {
-		...normalizeMarker( map.finish, { x: 0, z: 18, rotationY: 0 } ),
+		...normalizeMarker( map.finish, { x: 0, y: 0, z: 18, rotationY: 0, scale: 1 } ),
 		width: numberOr( map.finish.width, 8 ),
 	};
 
@@ -274,7 +274,7 @@ export function computeDevMapBounds( map ) {
 export function computeDevMapSpawn( map ) {
 
 	return {
-		position: [ map.start.x, 0.5, map.start.z ],
+		position: [ map.start.x, map.start.y + 0.5, map.start.z ],
 		angle: map.start.rotationY,
 	};
 
@@ -366,8 +366,10 @@ function normalizeMarker( marker, fallback ) {
 
 	return {
 		x: numberOr( marker.x, fallback.x ),
+		y: numberOr( marker.y, fallback.y ),
 		z: numberOr( marker.z, fallback.z ),
 		rotationY: numberOr( marker.rotationY, fallback.rotationY ),
+		scale: Math.max( 0.01, numberOr( marker.scale, fallback.scale ) ),
 	};
 
 }
