@@ -198,7 +198,7 @@
 		<div id="properties" class="property-grid"></div>
 	</aside>
 
-	<div id="status">Select a tool. Middle mouse, Space-drag, or wheel to navigate.</div>
+	<div id="status">Select a tool. Right-drag to orbit, wheel to zoom.</div>
 	<div id="toast"></div>
 	<input id="model-file" type="file" accept=".glb,.gltf,model/gltf-binary,model/gltf+json" hidden>
 	<input id="map-file" type="file" accept=".capytrack,.json,application/json" hidden>
@@ -206,6 +206,7 @@
 	<script type="module">
 	import * as THREE from 'three';
 	import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+	import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 	import {
 		createEmptyDevMap,
 		createDevMapFile,
@@ -215,6 +216,16 @@
 		DEV_MAP_STORAGE_KEY,
 	} from './js/DevMap.js';
 
+	const DEV_ASSET_ENDPOINT = '/__dev-map/assets';
+	const DEV_UPLOAD_ENDPOINT = '/__dev-map/upload-model';
+	const BUILT_IN_DEV_ASSETS = [
+		{
+			id: '/models/dev/isometric_room.glb',
+			name: 'isometric_room.glb',
+			type: 'model/gltf-binary',
+			url: '/models/dev/isometric_room.glb',
+		},
+	];
 	const loader = new GLTFLoader();
 	const map = createEmptyDevMap( 'Capy Dev Map' );
 	const assetScenes = new Map();
@@ -240,11 +251,22 @@
 	scene.background = new THREE.Color( 0x2b332d );
 	scene.fog = new THREE.Fog( 0x2b332d, 120, 220 );
 
-	const camera = new THREE.OrthographicCamera( - 42, 42, 42, - 42, 0.1, 300 );
-	camera.position.set( 0, 90, 0 );
+	const camera = new THREE.PerspectiveCamera( 50, window.innerWidth / window.innerHeight, 0.1, 500 );
+	camera.position.set( 36, 34, 36 );
 	camera.lookAt( 0, 0, 0 );
-	camera.zoom = 1;
 	camera.updateProjectionMatrix();
+
+	const controls = new OrbitControls( camera, renderer.domElement );
+	controls.target.set( 0, 0, 0 );
+	controls.enableDamping = true;
+	controls.dampingFactor = 0.08;
+	controls.screenSpacePanning = false;
+	controls.mouseButtons.LEFT = null;
+	controls.mouseButtons.MIDDLE = THREE.MOUSE.DOLLY;
+	controls.mouseButtons.RIGHT = THREE.MOUSE.ROTATE;
+	controls.touches.ONE = null;
+	controls.touches.TWO = THREE.TOUCH.DOLLY_PAN;
+	controls.update();
 
 	const dirLight = new THREE.DirectionalLight( 0xffffff, 4 );
 	dirLight.position.set( 28, 50, 18 );
@@ -275,7 +297,6 @@
 	const pointer = new THREE.Vector2();
 	const worldPlane = new THREE.Plane( new THREE.Vector3( 0, 1, 0 ), 0 );
 	const hitPoint = new THREE.Vector3();
-	const camTarget = new THREE.Vector3();
 
 	const mats = {
 		drive: new THREE.MeshStandardMaterial( { color: 0x4c755d, transparent: true, opacity: 0.62, roughness: 0.8 } ),
@@ -292,15 +313,7 @@
 
 	function resize() {
 
-		const sideWidth = window.innerWidth > 720 ? 312 : 0;
-		const w = Math.max( 1, window.innerWidth - sideWidth );
-		const h = window.innerHeight;
-		const aspect = w / h;
-		const size = 42;
-		camera.left = - size * aspect;
-		camera.right = size * aspect;
-		camera.top = size;
-		camera.bottom = - size;
+		camera.aspect = window.innerWidth / window.innerHeight;
 		camera.updateProjectionMatrix();
 		renderer.setSize( window.innerWidth, window.innerHeight );
 
@@ -355,12 +368,10 @@
 
 		try {
 
-			const dataUrl = await fileToDataUrl( file );
-			const asset = { id: uid( 'asset' ), name: file.name, type: file.type || 'model/gltf-binary', dataUrl };
-			const gltf = await loader.loadAsync( dataUrl );
+			const asset = await uploadDevModel( file );
+			const gltf = await loader.loadAsync( asset.url );
 			prepareModel( gltf.scene );
-			map.assets.push( asset );
-			assetScenes.set( asset.id, gltf.scene );
+			registerAsset( asset, gltf.scene );
 			selectedAssetId = asset.id;
 			renderAssets();
 			setTool( 'place' );
@@ -479,7 +490,7 @@
 			const btn = document.createElement( 'button' );
 			btn.className = 'asset';
 			btn.classList.toggle( 'selected', selectedAssetId === asset.id );
-			btn.textContent = asset.name;
+			btn.textContent = asset.url ? `${ asset.name }` : `${ asset.name } (embedded)`;
 			btn.addEventListener( 'click', () => {
 
 				selectedAssetId = asset.id;
@@ -653,6 +664,69 @@
 
 	}
 
+	function registerAsset( asset, scene ) {
+
+		const existing = map.assets.find( item => item.id === asset.id );
+		if ( existing ) {
+
+			Object.assign( existing, asset );
+
+		} else {
+
+			map.assets.push( asset );
+
+		}
+
+		assetScenes.set( asset.id, scene );
+
+	}
+
+	async function loadAvailableAssets() {
+
+		const assets = [ ...BUILT_IN_DEV_ASSETS ];
+
+		try {
+
+			const response = await fetch( DEV_ASSET_ENDPOINT );
+			if ( response.ok ) {
+
+				const manifest = await response.json();
+				for ( const asset of manifest.assets || [] ) {
+
+					if ( ! assets.some( item => item.id === asset.id ) ) assets.push( asset );
+
+				}
+
+			}
+
+		} catch ( err ) {
+
+			console.warn( 'Dev asset manifest unavailable', err );
+
+		}
+
+		for ( const asset of assets ) {
+
+			if ( assetScenes.has( asset.id ) ) continue;
+
+			try {
+
+				const gltf = await loader.loadAsync( asset.url );
+				prepareModel( gltf.scene );
+				registerAsset( asset, gltf.scene );
+
+			} catch ( err ) {
+
+				console.warn( `Could not load dev asset ${ asset.url }`, err );
+
+			}
+
+		}
+
+		if ( ! selectedAssetId ) selectedAssetId = map.assets[ 0 ]?.id || null;
+
+	}
+
 	function rebuild() {
 
 		while ( content.children.length > 0 ) content.remove( content.children[ 0 ] );
@@ -807,17 +881,11 @@
 
 	el.addEventListener( 'pointerdown', ( e ) => {
 
+		if ( e.button !== 0 || spaceDown || e.ctrlKey || e.metaKey ) return;
+
 		el.setPointerCapture( e.pointerId );
 		const world = screenToWorld( e );
 		if ( ! world ) return;
-
-		if ( e.button === 1 || spaceDown || e.ctrlKey || e.metaKey ) {
-
-			drag = { type: 'pan', sx: e.clientX, sy: e.clientY, cx: camTarget.x, cz: camTarget.z };
-			el.style.cursor = 'grabbing';
-			return;
-
-		}
 
 		if ( tool === 'select' ) {
 
@@ -895,18 +963,6 @@
 
 		if ( ! drag ) return;
 
-		if ( drag.type === 'pan' ) {
-
-			const scale = ( camera.top - camera.bottom ) / window.innerHeight / camera.zoom;
-			camTarget.x = drag.cx - ( e.clientX - drag.sx ) * scale;
-			camTarget.z = drag.cz - ( e.clientY - drag.sy ) * scale;
-			camera.position.x = camTarget.x;
-			camera.position.z = camTarget.z;
-			camera.lookAt( camTarget.x, 0, camTarget.z );
-			return;
-
-		}
-
 		const world = screenToWorld( e );
 		if ( ! world ) return;
 
@@ -958,28 +1014,6 @@
 		el.style.cursor = spaceDown ? 'grab' : '';
 
 	} );
-
-	el.addEventListener( 'wheel', ( e ) => {
-
-		e.preventDefault();
-		if ( e.ctrlKey ) {
-
-			camera.zoom *= e.deltaY > 0 ? 0.92 : 1.08;
-			camera.zoom = THREE.MathUtils.clamp( camera.zoom, 0.25, 8 );
-			camera.updateProjectionMatrix();
-
-		} else {
-
-			const scale = ( camera.top - camera.bottom ) / window.innerHeight / camera.zoom;
-			camTarget.x += e.deltaX * scale;
-			camTarget.z += e.deltaY * scale;
-			camera.position.x = camTarget.x;
-			camera.position.z = camTarget.z;
-			camera.lookAt( camTarget.x, 0, camTarget.z );
-
-		}
-
-	}, { passive: false } );
 
 	window.addEventListener( 'keydown', e => {
 
@@ -1068,16 +1102,25 @@
 
 	}
 
-	function fileToDataUrl( file ) {
+	async function uploadDevModel( file ) {
 
-		return new Promise( ( resolve, reject ) => {
-
-			const reader = new FileReader();
-			reader.onload = () => resolve( reader.result );
-			reader.onerror = () => reject( reader.error );
-			reader.readAsDataURL( file );
-
+		const response = await fetch( DEV_UPLOAD_ENDPOINT, {
+			method: 'POST',
+			headers: {
+				'Content-Type': file.type || 'model/gltf-binary',
+				'X-File-Name': file.name,
+			},
+			body: file,
 		} );
+
+		if ( ! response.ok ) {
+
+			throw new Error( 'Dev model upload failed' );
+
+		}
+
+		const data = await response.json();
+		return data.asset;
 
 	}
 
@@ -1094,6 +1137,7 @@
 	function animate() {
 
 		requestAnimationFrame( animate );
+		controls.update();
 		renderer.render( scene, camera );
 
 	}
@@ -1121,6 +1165,7 @@
 
 	}
 
+	await loadAvailableAssets();
 	renderAssets();
 	rebuild();
 	setStatus();

@@ -46,8 +46,9 @@ export function normalizeDevMap( input = {} ) {
 		id: String( asset.id ),
 		name: asset.name || 'Imported model',
 		type: asset.type || 'model/gltf-binary',
-		dataUrl: asset.dataUrl || asset.url || '',
-	} ) ).filter( asset => asset.id && asset.dataUrl );
+		url: asset.url || '',
+		dataUrl: asset.dataUrl || '',
+	} ) ).filter( asset => asset.id && ( asset.url || asset.dataUrl ) );
 
 	map.objects = map.objects.map( ( object ) => ( {
 		id: String( object.id ),
@@ -86,8 +87,31 @@ export function parseDevMapText( text ) {
 
 export function createDevMapFile( map ) {
 
+	const data = normalizeDevMap( map );
+	data.assets = data.assets.map( ( asset ) => {
+
+		const saved = {
+			id: asset.id,
+			name: asset.name,
+			type: asset.type,
+		};
+
+		if ( asset.url ) {
+
+			saved.url = asset.url;
+
+		} else if ( asset.dataUrl ) {
+
+			saved.dataUrl = asset.dataUrl;
+
+		}
+
+		return saved;
+
+	} );
+
 	return {
-		...normalizeDevMap( map ),
+		...data,
 		format: DEV_MAP_FORMAT,
 		version: DEV_MAP_VERSION,
 		updatedAt: new Date().toISOString(),
@@ -135,7 +159,7 @@ export async function loadDevMapAssets( loader, map ) {
 
 	await Promise.all( map.assets.map( async ( asset ) => {
 
-		const gltf = await loader.loadAsync( asset.dataUrl );
+		const gltf = await loader.loadAsync( asset.url || asset.dataUrl );
 		gltf.scene.traverse( ( child ) => {
 
 			if ( child.isMesh ) {
